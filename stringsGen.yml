@@ -1,0 +1,3 @@
+source: "Resources/Localizable.xcstrings"
+destination: "Resources/Strings+Generated.swift"
+
