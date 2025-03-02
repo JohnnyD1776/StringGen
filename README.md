@@ -10,7 +10,7 @@ The TypeLocXC Swift package provides a convenient way to generate type-safe acce
 - Handles format specifiers like `%s`,  %d, %`@  etc., with appropriate Swift types.
 
 ## Prerequisites
-- Swift 5.9 or later.
+- Swift 5.5 or later.
 - An Xcode project with at least one `.xcstrings` file.
 
 ## Installation
