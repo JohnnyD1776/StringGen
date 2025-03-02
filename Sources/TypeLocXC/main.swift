@@ -1,4 +1,3 @@
-#!/usr/bin/env swift
 import Foundation
 import Yams
 
@@ -6,31 +5,59 @@ let args = CommandLine.arguments
 var xcstringsPath: String
 var outputFilePath: String
 
-if args.count >= 3 && !args.contains("--config") {
-  // Case 1: Source and destination provided directly
+if args.count == 1 { // No arguments beyond the executable name
+  guard let projectRoot = findProjectRoot(from: FileManager.default.currentDirectoryPath) else {
+    fatalError("Error: No Xcode project found in current directory or parents.")
+  }
+  let configPath = "\(projectRoot)/TypeLocXC.yml"
+  if FileManager.default.fileExists(atPath: configPath) {
+    // Load and parse TypeLocXC.yml
+    do {
+      let configData = try String(contentsOfFile: configPath)
+      guard let config = try Yams.load(yaml: configData) as? [String: String],
+            let source = config["source"],
+            let destination = config["destination"] else {
+        fatalError("Error: Invalid format in '\(configPath)'. Expected 'source' and 'destination' keys.")
+      }
+      xcstringsPath = source
+      outputFilePath = destination
+    } catch {
+      fatalError("Error reading config file '\(configPath)': \(error)")
+    }
+  } else {
+    // Auto-detect .xcstrings file
+    guard let xcstringsFile = findFirstXcstringsFile(in: projectRoot) else {
+      fatalError("Error: No .xcstrings file found and no config provided.")
+    }
+    xcstringsPath = xcstringsFile
+    outputFilePath = "\(projectRoot)/Resources/Strings+Generated.swift"
+    // Ensure Resources directory exists
+    let resourcesDir = "\(projectRoot)/Resources"
+    if !FileManager.default.fileExists(atPath: resourcesDir) {
+      try FileManager.default.createDirectory(atPath: resourcesDir, withIntermediateDirectories: true)
+    }
+  }
+} else if args.count >= 3 && !args.contains("--config") {
+  // Explicit paths provided
   xcstringsPath = args[1]
   outputFilePath = args[2]
 } else {
-  // Case 2 or 3: Look for a config file
+  // Look for a config file
   var configPath: String
-
-  // Check if a custom config file is specified with --config
   if let configIndex = args.firstIndex(of: "--config"), configIndex + 1 < args.count {
     configPath = args[configIndex + 1]
   } else {
-    // Default to TypeLocXC.yml if no --config is provided
     configPath = "TypeLocXC.yml"
   }
 
   // Verify the config file exists
   guard FileManager.default.fileExists(atPath: configPath) else {
     print("Error: No parameters provided and config file '\(configPath)' not found.")
-    print("Usage: swift TypeLocXC.swift <xcstringsPath> <outputFilePath>")
-    print("   or: swift TypeLocXC.swift --config <configFile.yml>")
+    print("Usage: TypeLocXC <xcstringsPath> <outputFilePath>")
+    print("   or: TypeLocXC --config <configFile.yml>")
     exit(1)
   }
 
-  // Parse the YAML config file
   do {
     let configData = try String(contentsOfFile: configPath)
     guard let config = try Yams.load(yaml: configData) as? [String: String],
@@ -62,6 +89,33 @@ guard let data = try? Data(contentsOf: URL(fileURLWithPath: xcstringsPath)),
       let strings = json["strings"] as? [String: Any] else {
   fatalError("Failed to read or parse .xcstrings file")
 }
+
+// MARK: MAIN FUNCTIONS
+
+func findProjectRoot(from directory: String) -> String? {
+  var currentDir = directory
+  while currentDir != "/" {
+    let contents = try? FileManager.default.contentsOfDirectory(atPath: currentDir)
+    if contents?.contains(where: { $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace") }) == true {
+      return currentDir
+    }
+    currentDir = URL(fileURLWithPath: currentDir).deletingLastPathComponent().path
+  }
+  return nil
+}
+
+
+// Add this helper function
+func findFirstXcstringsFile(in directory: String) -> String? {
+  let enumerator = FileManager.default.enumerator(atPath: directory)
+  while let file = enumerator?.nextObject() as? String {
+    if file.hasSuffix(".xcstrings") {
+      return "\(directory)/\(file)"
+    }
+  }
+  return nil
+}
+
 
 
 // Extract format specifiers from a string
