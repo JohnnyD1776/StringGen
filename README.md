@@ -1,6 +1,6 @@
 # TypeLocXC - Type-Safe Localization for Swift
 
-Generate type-safe localization keys from `.xcstrings` files for Swift projects using this Swift script.
+The TypeLocXC Swift package provides a convenient way to generate type-safe access to localized strings from an .xcstrings file in your Xcode project. This guide will walk you through the process of integrating the package into your project, setting up a build script and using it with or without a configuration file.
 
 ## Features
 - Converts `.xcstrings` files into a type-safe `Llon` enum.
@@ -14,34 +14,18 @@ Generate type-safe localization keys from `.xcstrings` files for Swift projects 
 - An Xcode project with at least one `.xcstrings` file.
 
 ## Installation
+1. In Xcode, go to **File > Add Packages**.
+2. Enter `https://github.com/JohnnyD1776/TypeLocXC.git`
+3. Select latest version.
 
-#### Option 1: Build via Command Line
-1. Clone or download the script from the repository.
-2. Navigate to the script directory in your terminal.
-3. Run:
-   ``bash
-   swift build -c release
-   ``
-4. The compiled binary will be located at `.build/release/TypeLocXC`.
-
-#### Option 2: Build via Xcode
-1. Open the project in Xcode.
-2. Select the `TypeLocXC` scheme.
-3. Build the project (Cmd + B).
-4. Find the binary in the `Products` directory within your Xcode Derived Data folder.
-
-#### Copy the Binary
-- Copy the `TypeLocXC` binary to a location accessible by your Xcode project (e.g., `/usr/local/bin/` or a project subdirectory).
-
-## Integrating into Your Xcode Project
-
-#### Add the Run Script
-Add the following Run Script phase to your Xcode target (before the "Compile Sources" phase):
+## Usage
+Add this to a Run Script Build Phase:
 ``bash
-"${PATH_TO_BINARY}/TypeLocXC" "${SRCROOT}/path/to/strings.xcstrings" "${SRCROOT}/Resources/Strings+Generated.swift"
+TOOL_PATH="${BUILD_DIR}/../../SourcePackages/checkouts/TypeLocXC/.build/release/TypeLocXC"
+"$TOOL_PATH""
 ``
-- Replace `${PATH_TO_BINARY}` with the path to the `MTypeLocXC` binary.
-- Adjust the input `.xcstrings` path and output file path as needed.
+
+#### Note: You will need to run the Build atleast once before Type Safe entries are accessible. 
 
 #### Add the Generated File
 1. Drag the generated `Strings+Generated.swift` file into your Xcode project.
@@ -52,8 +36,13 @@ Create a `TypeLocXC.yml` file in your project root to customize the script behav
 ``yaml
 input: "path/to/strings.xcstrings"
 output: "Resources/Strings+Generated.swift"
-```
-If provided, the script uses these paths instead of command-line arguments.
+``
+
+If you'd like to use a custom named configuration, update the Build script: 
+``bash
+TOOL_PATH="${BUILD_DIR}/../../SourcePackages/checkouts/TypeLocXC/.build/release/TypeLocXC"
+"$TOOL_PATH" --config "${SRCROOT}/YOUR_CONFIGURATION_FILE.yml"
+``
 
 ### Automatic Detection
 If no arguments or config file are provided:
@@ -89,9 +78,6 @@ let message = L1on.greeting("World") // Returns "Hello, World!"
 : `Double`
 - `%s`
 : `String` (C-style string)
-
-## Updating the Binary
-To update `MTypeLocXC` `rebuild it using either the command-line or Xcode method and replace the old binary.
 
 ## Notes
 - Ensure the `.xcstrings` file is well-formed.

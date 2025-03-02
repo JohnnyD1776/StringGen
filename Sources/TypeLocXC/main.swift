@@ -5,12 +5,16 @@ let args = CommandLine.arguments
 var xcstringsPath: String
 var outputFilePath: String
 
+print("Arguments received: \(CommandLine.arguments)")
+
 if args.count == 1 { // No arguments beyond the executable name
+  print("No parameters found. Finding default files")
   guard let projectRoot = findProjectRoot(from: FileManager.default.currentDirectoryPath) else {
     fatalError("Error: No Xcode project found in current directory or parents.")
   }
   let configPath = "\(projectRoot)/TypeLocXC.yml"
   if FileManager.default.fileExists(atPath: configPath) {
+    print("Found TypeLocXC.yml")
     // Load and parse TypeLocXC.yml
     do {
       let configData = try String(contentsOfFile: configPath)
@@ -29,6 +33,7 @@ if args.count == 1 { // No arguments beyond the executable name
     guard let xcstringsFile = findFirstXcstringsFile(in: projectRoot) else {
       fatalError("Error: No .xcstrings file found and no config provided.")
     }
+
     xcstringsPath = xcstringsFile
     outputFilePath = "\(projectRoot)/Resources/Strings+Generated.swift"
     // Ensure Resources directory exists
@@ -41,6 +46,8 @@ if args.count == 1 { // No arguments beyond the executable name
   // Explicit paths provided
   xcstringsPath = args[1]
   outputFilePath = args[2]
+  print("Using provided configuration paths '\(xcstringsPath)' and '\(outputFilePath)'.")
+
 } else {
   // Look for a config file
   var configPath: String
@@ -100,6 +107,7 @@ func findProjectRoot(from directory: String) -> String? {
       return currentDir
     }
     currentDir = URL(fileURLWithPath: currentDir).deletingLastPathComponent().path
+    print("Found Project Root: \(currentDir)")
   }
   return nil
 }
@@ -110,6 +118,7 @@ func findFirstXcstringsFile(in directory: String) -> String? {
   let enumerator = FileManager.default.enumerator(atPath: directory)
   while let file = enumerator?.nextObject() as? String {
     if file.hasSuffix(".xcstrings") {
+      print("Found Localized Strings file: \(file)")
       return "\(directory)/\(file)"
     }
   }
@@ -182,9 +191,10 @@ import Foundation
 /// ```
 ///
 /// Supported format specifiers:
-/// - `%d`: Integer (`Int`)
-/// - `%@`: String (`String`)
-/// - `%f`: Float (`Float`)
+/// - `%@ : `String`
+/// - `%d`, `%i` : `Int`
+/// - `%f` : `Double`
+/// - `%s` : `String` (C-style string)
 ///
 /// Ensure `Localizable.xcstrings` is up-to-date in your project.
 
