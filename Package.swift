@@ -1,4 +1,4 @@
-// swift-tools-version:5.5
+// swift-tools-version:5.6
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -9,7 +9,8 @@ let package = Package(
     .macOS(.v12)
   ],
   products: [
-    .executable(name: "TypeLocXC", targets: ["TypeLocXC"])
+    .executable(name: "TypeLocXC", targets: ["TypeLocXC"]),
+    .plugin(name: "TypeLocXCPlugin", targets: ["TypeLocXCPlugin"])
   ],
   dependencies: [
     .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.0")
@@ -18,6 +19,12 @@ let package = Package(
     .executableTarget(
       name: "TypeLocXC",
       dependencies: ["Yams"]
+    ),
+    .plugin(
+      name: "TypeLocXCPlugin",
+      capability: .buildTool(),
+      dependencies: ["TypeLocXC"],
+      path: "Plugins/TypeLocXCPlugin"
     )
   ]
 )
