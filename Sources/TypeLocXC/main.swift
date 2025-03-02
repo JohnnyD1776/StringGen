@@ -1,131 +1,182 @@
 import Foundation
 import Yams
 
-let args = CommandLine.arguments
-var xcstringsPath: String
-var outputFilePath: String
+// MARK: - Argument Parsing
+
+let arguments = Array(CommandLine.arguments.dropFirst()) // Exclude executable name
+var sourceArg: String?
+var destinationArg: String?
+var configArg: String?
+var positionalArgs: [String] = []
+
+var i = 0
+while i < arguments.count {
+  let arg = arguments[i]
+
+  if arg == "--help" || arg == "-?" {
+    print("HELP OUTPUT:")
+    print(helpMessage())
+    fflush(stdout) // Ensure output is flushed
+    exit(0)
+  }
+
+  if arg == "--source", i + 1 < arguments.count {
+    sourceArg = arguments[i + 1]
+    i += 2
+  } else if arg == "--destination", i + 1 < arguments.count {
+    destinationArg = arguments[i + 1]
+    i += 2
+  } else if arg == "--config", i + 1 < arguments.count {
+    configArg = arguments[i + 1]
+    i += 2
+  } else if arg.hasPrefix("--") {
+    print("Unknown flag: \(arg)")
+    exit(1)
+  } else {
+    positionalArgs.append(arg)
+    i += 1
+  }
+}
 
 print("Arguments received: \(CommandLine.arguments)")
 
-if args.count == 1 { // No arguments beyond the executable name
-  print("No parameters found. Finding default files")
-  guard let projectRoot = findProjectRoot(from: FileManager.default.currentDirectoryPath) else {
-    fatalError("Error: No Xcode project found in current directory or parents.")
-  }
-  let configPath = "\(projectRoot)/TypeLocXC.yml"
-  if FileManager.default.fileExists(atPath: configPath) {
-    print("Found TypeLocXC.yml")
-    // Load and parse TypeLocXC.yml
-    do {
-      let configData = try String(contentsOfFile: configPath)
-      guard let config = try Yams.load(yaml: configData) as? [String: String],
-            let source = config["source"],
-            let destination = config["destination"] else {
-        fatalError("Error: Invalid format in '\(configPath)'. Expected 'source' and 'destination' keys.")
-      }
-      xcstringsPath = source
-      outputFilePath = destination
-    } catch {
-      fatalError("Error reading config file '\(configPath)': \(error)")
-    }
-  } else {
-    // Auto-detect .xcstrings file
-    guard let xcstringsFile = findFirstXcstringsFile(in: projectRoot) else {
-      fatalError("Error: No .xcstrings file found and no config provided.")
-    }
+// MARK: - Path Variables
 
-    xcstringsPath = xcstringsFile
-    outputFilePath = "\(projectRoot)/Resources/Strings+Generated.swift"
-    // Ensure Resources directory exists
-    let resourcesDir = "\(projectRoot)/Resources"
-    if !FileManager.default.fileExists(atPath: resourcesDir) {
-      try FileManager.default.createDirectory(atPath: resourcesDir, withIntermediateDirectories: true)
-    }
-  }
-} else if args.count >= 3 && !args.contains("--config") {
-  // Explicit paths provided
-  xcstringsPath = args[1]
-  outputFilePath = args[2]
-  print("Using provided configuration paths '\(xcstringsPath)' and '\(outputFilePath)'.")
+var xcstringsPath: String = ""
+var outputFilePath: String = ""
+let projectRoot = FileManager.default.currentDirectoryPath // Assume script runs from project root
 
-} else {
-  // Look for a config file
-  var configPath: String
-  if let configIndex = args.firstIndex(of: "--config"), configIndex + 1 < args.count {
-    configPath = args[configIndex + 1]
-  } else {
-    configPath = "TypeLocXC.yml"
-  }
+// MARK: - Configuration Functions
 
-  // Verify the config file exists
+/// Loads source and destination from a config file.
+func loadConfig(from path: String, isArg: Bool? = nil) -> (source: String, destination: String)? {
+  let configPath = (path as NSString).isAbsolutePath ? path : "\(projectRoot)/\(path)"
   guard FileManager.default.fileExists(atPath: configPath) else {
-    print("Error: No parameters provided and config file '\(configPath)' not found.")
-    print("Usage: TypeLocXC <xcstringsPath> <outputFilePath>")
-    print("   or: TypeLocXC --config <configFile.yml>")
-    exit(1)
+    if isArg == true {
+      fatalError("Config file not found at: \(configPath)")
+    } else {
+      print("Config file not found at: \(configPath)")
+      return nil
+    }
   }
-
+  print("Config file found at: \(configPath)")
   do {
     let configData = try String(contentsOfFile: configPath)
     guard let config = try Yams.load(yaml: configData) as? [String: String],
           let source = config["source"],
           let destination = config["destination"] else {
-      print("Error: Invalid format in '\(configPath)'. Expected 'source' and 'destination' keys.")
-      exit(1)
+      print("Invalid format in '\(configPath)'. Expected 'source' and 'destination' keys.")
+      return nil
     }
-    xcstringsPath = source
-    outputFilePath = destination
+    return (source, destination)
   } catch {
     print("Error reading config file '\(configPath)': \(error)")
-    exit(1)
+    return nil
   }
 }
 
-// At this point, xcstringsPath and outputFilePath are set
+/// Finds the first .xcstrings file in the project root or subdirectories.
+func findDefaultSource() -> String? {
+  let enumerator = FileManager.default.enumerator(atPath: projectRoot)
+  while let file = enumerator?.nextObject() as? String {
+    if file.hasSuffix(".xcstrings") {
+      print("Found Localized Strings file: \(file)")
+      return "\(projectRoot)/\(file)"
+    }
+  }
+  return nil
+}
+
+/// Sets up the default destination path.
+func setupDefaultDestination() -> String {
+  let defaultPath = "\(projectRoot)/Resources/Strings+Generated.swift"
+  let resourcesDir = "\(projectRoot)/Resources"
+  if !FileManager.default.fileExists(atPath: resourcesDir) {
+    do {
+      try FileManager.default.createDirectory(atPath: resourcesDir, withIntermediateDirectories: true)
+      print("Created Resources directory at: \(resourcesDir)")
+    } catch {
+      fatalError("Error creating Resources directory: \(error)")
+    }
+  }
+  return defaultPath
+}
+
+/// Validates and sets the source path.
+func validateSource(_ path: String?) -> String {
+  if let source = path {
+    let absoluteSource = (source as NSString).isAbsolutePath ? source : "\(projectRoot)/\(source)"
+    guard FileManager.default.fileExists(atPath: absoluteSource) else {
+      fatalError("Specified source file does not exist: \(absoluteSource)")
+    }
+    return absoluteSource
+  } else {
+    guard let defaultSource = findDefaultSource() else {
+      fatalError("No .xcstrings file found in project root and no source provided.")
+    }
+    return defaultSource
+  }
+}
+
+/// Validates and sets the destination path, ensuring it's within project root.
+func validateDestination(_ path: String?, projectRoot: String) -> String {
+  let destination = path ?? setupDefaultDestination()
+  let absoluteDestination = (destination as NSString).isAbsolutePath ? destination : "\(projectRoot)/\(destination)"
+  let outputDirectory = (absoluteDestination as NSString).deletingLastPathComponent
+
+  // Check if destination is within project root
+  let projectRootURL = URL(fileURLWithPath: projectRoot).standardized
+  let outputDirURL = URL(fileURLWithPath: outputDirectory).standardized
+  guard outputDirURL.path.hasPrefix(projectRootURL.path) else {
+    fatalError("Destination directory '\(outputDirectory)' is outside project root '\(projectRoot)'.")
+  }
+
+  if !FileManager.default.fileExists(atPath: outputDirectory) {
+    do {
+      try FileManager.default.createDirectory(atPath: outputDirectory, withIntermediateDirectories: true)
+      print("Created output directory: \(outputDirectory)")
+    } catch {
+      fatalError("Error creating output directory '\(outputDirectory)': \(error)")
+    }
+  }
+  return absoluteDestination
+}
+
+// MARK: - Main Logic
+
+// Step 1: Handle config
+if let configPath = configArg, let (source, destination) = loadConfig(from: configPath, isArg: configArg != nil) {
+  xcstringsPath = source
+  outputFilePath = destination
+} else if let (source, destination) = loadConfig(from: "TypeLocXC.yml") {
+  xcstringsPath = source
+  outputFilePath = destination
+} else if positionalArgs.count == 2 {
+  xcstringsPath = positionalArgs[0]
+  outputFilePath = positionalArgs[1]
+} else {
+  // No config or positional args; use defaults later
+  xcstringsPath = "" // Will be set by validateSource
+  outputFilePath = "" // Will be set by validateDestination
+}
+
+// Step 2: Validate and override with source and destination arguments
+xcstringsPath = validateSource(sourceArg)
+outputFilePath = validateDestination(destinationArg, projectRoot: projectRoot)
+
 print("Using source: \(xcstringsPath)")
 print("Using destination: \(outputFilePath)")
 
-// Verify input file exists
-guard FileManager.default.fileExists(atPath: xcstringsPath) else {
-  fatalError("Input file does not exist: \(xcstringsPath)")
-}
+// MARK: - String Generation
 
 // Load and parse the .xcstrings file
 guard let data = try? Data(contentsOf: URL(fileURLWithPath: xcstringsPath)),
       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
       let strings = json["strings"] as? [String: Any] else {
-  fatalError("Failed to read or parse .xcstrings file")
+  fatalError("Failed to read or parse .xcstrings file at \(xcstringsPath)")
 }
 
-// MARK: MAIN FUNCTIONS
-
-func findProjectRoot(from directory: String) -> String? {
-  var currentDir = directory
-  while currentDir != "/" {
-    let contents = try? FileManager.default.contentsOfDirectory(atPath: currentDir)
-    if contents?.contains(where: { $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace") }) == true {
-      return currentDir
-    }
-    currentDir = URL(fileURLWithPath: currentDir).deletingLastPathComponent().path
-    print("Found Project Root: \(currentDir)")
-  }
-  return nil
-}
-
-
-// Add this helper function
-func findFirstXcstringsFile(in directory: String) -> String? {
-  let enumerator = FileManager.default.enumerator(atPath: directory)
-  while let file = enumerator?.nextObject() as? String {
-    if file.hasSuffix(".xcstrings") {
-      print("Found Localized Strings file: \(file)")
-      return "\(directory)/\(file)"
-    }
-  }
-  return nil
-}
-
-
+// MARK: MAIN HELPER FUNCTIONS
 
 // Extract format specifiers from a string
 func extractSpecifiers(from string: String) -> [String] {
@@ -243,3 +294,31 @@ do {
   fatalError("Failed to write to \(outputFilePath): \(error)")
 }
 
+
+// Add this at the top of the argument parsing section, before the while loop
+func helpMessage() -> String { """
+Usage: TypeLocXC [OPTIONS] [SOURCE DESTINATION]
+
+Generate type-safe Swift code from an .xcstrings file.
+
+Options:
+  --source <file>        Specify the input .xcstrings file
+  --destination <file>   Specify the output Swift file
+  --config <file>        Use a custom YAML config file (e.g., config.yml)
+  --help, -?             Display this help message
+
+Positional Arguments:
+  SOURCE                 Input .xcstrings file (optional if --source is used)
+  DESTINATION            Output Swift file (optional if --destination is used)
+
+If no arguments or config are provided, the script searches for a TypeLocXC.yml
+in the project root. If absent, it finds the first .xcstrings file and outputs to
+Resources/Strings+Generated.swift, creating the Resources directory if needed.
+
+Examples:
+  TypeLocXC Strings.xcstrings Output/Strings.swift
+  TypeLocXC --source Custom.xcstrings --destination Generated.swift
+  TypeLocXC --config myconfig.yml
+  TypeLocXC --help
+"""
+}
